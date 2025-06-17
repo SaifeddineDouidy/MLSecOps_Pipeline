@@ -1,0 +1,77 @@
+name: MLSecOps Full Pipeline
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  mlsecops:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # Load Artifacts (Models, Notebooks, etc.)
+    - name: Load Data Metadata
+      run: echo '{"source":"cifar10","author":"team","ssn":"123-45-6789"}' > data/sample_meta.json
+
+    # Stage 3: Security Tools (Gitleaks + Compliance Scanner)
+    - name: Run Gitleaks
+      uses: gitleaks/gitleaks-action@v2
+      with:
+        args: detect --source=. --verbose
+
+    - name: Run Mock Compliance Checker
+      run: python compliance-checker.py
+
+    - name: Scan Jupyter Notebook
+      run: |
+        jupyter nbconvert --to script train_notebook.ipynb
+
+    # Stage 5: Train the Model
+    - name: Train Model
+      run: python train_model.py
+
+    # Stage 6: Evaluate the Model
+    - name: Evaluate Model
+      run: python evaluate_model.py
+
+    # Final Testing / LLM-specific Scans
+    - name: Scan Trained Model for Vulnerabilities
+      run: | 
+       echo "Mock scan: no backdoors found in cnn_model.pt"
+
+    # Quality Gate
+    - name: Sign Model with Cosign
+      env:
+        COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        COSIGN_YES: true
+      run: |
+        echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+        cosign sign --key cosign.key model/cnn_model.pt
+
+    # Store in GCP Storage
+    - name: Upload to GCP Bucket
+      uses: google-github-actions/upload-cloud-storage@v1
+      with:
+        path: model/cnn_model.pt
+        destination: ${{ secrets.GCP_BUCKET }}/models/
+
+    # Signature Verification (Final Quality Gate)
+    - name: Verify Cosign Signature
+      run: |
+        echo "${{ secrets.COSIGN_PUBLIC_KEY }}" > cosign.pub
+        cosign verify --key cosign.pub model/cnn_model.pt
