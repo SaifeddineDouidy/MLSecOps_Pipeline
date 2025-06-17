@@ -49,10 +49,62 @@ jobs:
     - name: Evaluate Model
       run: python evaluate_model.py
 
-    # Final Testing / LLM-specific Scans
-    - name: Scan Trained Model for Vulnerabilities
-      run: | 
-       echo "Mock scan: no backdoors found in cnn_model.pt"
+    - name: Stage 7 – Final Security Tests on Model
+      run: |
+            echo "🔍 Running model integrity checks..."
+
+            # 1. Check model file type
+            file model/cnn_model.pt
+
+            # 2. Print model parameters summary (to catch unusual layers)
+            python -c "
+            import torch
+            from train_model import SimpleCNN
+            model = SimpleCNN()
+            model.load_state_dict(torch.load('model/cnn_model.pt'))
+            print(model)
+            "
+
+            # 3. Check model file size (too small may indicate corruption)
+            MODEL_SIZE=$(stat --printf="%s" model/cnn_model.pt)
+            echo \"Model size: $MODEL_SIZE bytes\"
+            if [ $MODEL_SIZE -lt 50000 ]; then
+            echo \"❌ Model size suspiciously small!\"
+            exit 1
+            fi
+
+            # 4. Run simulated adversarial robustness test (FGSM-like)
+            python -c "
+            import torch
+            import torchvision.transforms as transforms
+            from train_model import SimpleCNN
+            from torchvision.datasets import CIFAR10
+            from torch.utils.data import DataLoader
+
+            model = SimpleCNN()
+            model.load_state_dict(torch.load('model/cnn_model.pt'))
+            model.eval()
+
+            transform = transforms.Compose([transforms.ToTensor()])
+            testset = CIFAR10(root='./data', train=False, download=True, transform=transform)
+            testloader = DataLoader(testset, batch_size=1, shuffle=True)
+
+            image, label = next(iter(testloader))
+            image.requires_grad = True
+            output = model(image)
+            pred = output.argmax(dim=1)
+            loss = torch.nn.CrossEntropyLoss()(output, label)
+            loss.backward()
+            adv_image = image + 0.05 * image.grad.sign()
+            new_pred = model(adv_image).argmax(dim=1)
+
+            print(f'Original Prediction: {pred.item()}, Adversarial Prediction: {new_pred.item()}')
+            if pred.item() != new_pred.item():
+                print('⚠️ Model is sensitive to minor perturbations (not robust)')
+            "
+
+            echo "✅ Final model checks completed."
+
 
     # Quality Gate
     - name: Sign Model with Cosign
