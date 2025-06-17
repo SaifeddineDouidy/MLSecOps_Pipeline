@@ -39,4 +39,4 @@ for epoch in range(1):
 
 # Save model
 os.makedirs("model", exist_ok=True)
-torch.save(model.state_dict(), "ml/cnn_model.pt")
+torch.save(model.state_dict(), "model/cnn_model.pt")
