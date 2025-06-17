@@ -106,12 +106,13 @@ jobs:
 
     - name: Sign Model with Cosign
       env:
-        COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+            COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
       run: |
-        echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
-        cosign sign-blob --key cosign.key --output-signature model/cnn_model.pt.sig model/cnn_model.pt || { echo "Signing failed"; cat cosign.key; exit 1; }
-        cosign public-key --key cosign.key > cosign.pub
-        rm cosign.key
+            echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+            # For Cosign v2.x - disable tlog explicitly
+            cosign sign-blob --key cosign.key --output-signature model/cnn_model.pt.sig --no-tlog-upload model/cnn_model.pt || { echo "Signing failed"; cat cosign.key; exit 1; }
+            cosign public-key --key cosign.key > cosign.pub
+            rm cosign.key
 
     - name: Upload to GCP Bucket
       uses: google-github-actions/upload-cloud-storage@v1
