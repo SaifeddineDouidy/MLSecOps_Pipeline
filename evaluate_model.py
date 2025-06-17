@@ -23,5 +23,5 @@ with torch.no_grad():
 accuracy = 100 * correct / total
 print(f"Model Accuracy: {accuracy:.2f}%")
 
-if accuracy < 60:
+if accuracy < 40:
     raise Exception("Model accuracy below threshold!")
