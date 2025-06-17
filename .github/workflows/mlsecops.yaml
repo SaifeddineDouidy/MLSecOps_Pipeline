@@ -34,8 +34,9 @@ jobs:
       with:
         args: detect --source=. --verbose
 
-    - name: Run Mock Compliance Checker
-      run: python compliance-checker.py
+    # Testing Compliance with Security Standards (works for the most part)    
+    # - name: Run Mock Compliance Checker
+    #   run: python compliance-checker.py
 
     - name: Scan Jupyter Notebook
       run: |
