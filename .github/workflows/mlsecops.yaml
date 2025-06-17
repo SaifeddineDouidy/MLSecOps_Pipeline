@@ -127,5 +127,5 @@ jobs:
 
     - name: Verify Cosign Signature
       run: |
-        cosign verify-blob --key cosign.pub --signature model/cnn_model.pt.sig model/cnn_model.pt || { echo "Verification failed"; cat cosign.pub; exit 1; }
+        cosign verify-blob --key cosign.pub --signature model/cnn_model.pt.sig --tlog-upload=false model/cnn_model.pt || { echo "Verification failed"; cat cosign.pub; exit 1; }
         rm cosign.pub
