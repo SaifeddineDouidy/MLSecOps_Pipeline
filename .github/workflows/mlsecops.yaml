@@ -108,9 +108,16 @@ jobs:
             echo "✅ Final model checks completed."
 
 
-    - name: Configure Cosign for GCR
-      run: |
-          gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://gcr.io
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Set up gcloud CLI
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
     - name: Set up Cosign
       run: |
@@ -125,17 +132,8 @@ jobs:
         COSIGN_YES: true
       run: |
         echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
-        cosign sign --key cosign.key model/cnn_model.pt
+        cosign sign-blob --key cosign.key model/cnn_model.pt
 
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v2
-      with:
-          credentials_json: '${{ secrets.GCP_SA_KEY }}'
-
-    - name: Set up gcloud CLI
-      uses: google-github-actions/setup-gcloud@v1
-      with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
     # Store in GCP Storage
     - name: Upload to GCP Bucket
@@ -144,8 +142,8 @@ jobs:
         path: model/cnn_model.pt
         destination: ${{ secrets.GCP_BUCKET }}/models/
 
-    # Signature Verification (Final Quality Gate)
     - name: Verify Cosign Signature
       run: |
         echo "${{ secrets.COSIGN_PUBLIC_KEY }}" > cosign.pub
-        cosign verify --key cosign.pub model/cnn_model.pt
+        cosign verify-blob --key cosign.pub --signature model/cnn_model.pt.sig model/cnn_model.pt
+
