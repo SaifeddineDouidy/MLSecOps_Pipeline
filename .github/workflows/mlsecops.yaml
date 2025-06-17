@@ -107,9 +107,10 @@ jobs:
     - name: Sign Model with Cosign
       env:
         COSIGN_EXPERIMENTAL: 0
+        COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
       run: |
         echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
-        cosign sign-blob --key cosign.key --output-signature model/cnn_model.pt.sig model/cnn_model.pt
+        cosign sign-blob --key cosign.key --output-signature model/cnn_model.pt.sig model/cnn_model.pt || { echo "Signing failed"; cat cosign.key; exit 1; }
         cosign public-key --key cosign.key > cosign.pub
         rm cosign.key
 
@@ -127,5 +128,5 @@ jobs:
 
     - name: Verify Cosign Signature
       run: |
-        cosign verify-blob --key cosign.pub --signature model/cnn_model.pt.sig model/cnn_model.pt
+        cosign verify-blob --key cosign.pub --signature model/cnn_model.pt.sig model/cnn_model.pt || { echo "Verification failed"; cat cosign.pub; exit 1; }
         rm cosign.pub
