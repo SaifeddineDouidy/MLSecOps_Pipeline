@@ -139,7 +139,7 @@ jobs:
     - name: Upload to GCP Bucket
       uses: google-github-actions/upload-cloud-storage@v1
       with:
-        path: model/cnn_model.pt
+        path: model/
         destination: ${{ secrets.GCP_BUCKET }}/models/
 
     - name: Verify Cosign Signature
