@@ -25,125 +25,107 @@ jobs:
         pip install numpy 
         pip install -r requirements.txt
 
-    # Load Artifacts (Models, Notebooks, etc.)
     - name: Load Data Metadata
       run: echo '{"source":"cifar10","author":"team","ssn":"123-45-6789"}' > data/sample_meta.json
 
-    # Stage 3: Security Tools (Gitleaks + Compliance Scanner)
     - name: Run Gitleaks
       uses: gitleaks/gitleaks-action@v2
       with:
         args: detect --source=. --verbose
 
-    # Testing Compliance with Security Standards (works for the most part)    
-    # - name: Run Mock Compliance Checker
-    #   run: python compliance-checker.py
-
     - name: Scan Jupyter Notebook
       run: |
         jupyter nbconvert --to script train_notebook.ipynb
 
-    # Stage 5: Train the Model
     - name: Train Model
       run: python train_model.py
 
-    # Stage 6: Evaluate the Model
     - name: Evaluate Model
       run: python evaluate_model.py
 
     - name: Stage 7 – Final Security Tests on Model
       run: |
-            echo "🔍 Running model integrity checks..."
-
-            # 1. Check model file type
-            file model/cnn_model.pt
-
-            # 2. Print model parameters summary (to catch unusual layers)
-            python -c "
-            import torch
-            from train_model import SimpleCNN
-            model = SimpleCNN()
-            model.load_state_dict(torch.load('model/cnn_model.pt'))
-            print(model)
-            "
-
-            # 3. Check model file size (too small may indicate corruption)
-            MODEL_SIZE=$(stat --printf="%s" model/cnn_model.pt)
-            echo \"Model size: $MODEL_SIZE bytes\"
-            if [ $MODEL_SIZE -lt 50000 ]; then
-            echo \"❌ Model size suspiciously small!\"
-            exit 1
-            fi
-
-            # 4. Run simulated adversarial robustness test (FGSM-like)
-            python -c "
-            import torch
-            import torchvision.transforms as transforms
-            from train_model import SimpleCNN
-            from torchvision.datasets import CIFAR10
-            from torch.utils.data import DataLoader
-
-            model = SimpleCNN()
-            model.load_state_dict(torch.load('model/cnn_model.pt'))
-            model.eval()
-
-            transform = transforms.Compose([transforms.ToTensor()])
-            testset = CIFAR10(root='./data', train=False, download=True, transform=transform)
-            testloader = DataLoader(testset, batch_size=1, shuffle=True)
-
-            image, label = next(iter(testloader))
-            image.requires_grad = True
-            output = model(image)
-            pred = output.argmax(dim=1)
-            loss = torch.nn.CrossEntropyLoss()(output, label)
-            loss.backward()
-            adv_image = image + 0.05 * image.grad.sign()
-            new_pred = model(adv_image).argmax(dim=1)
-
-            print(f'Original Prediction: {pred.item()}, Adversarial Prediction: {new_pred.item()}')
-            if pred.item() != new_pred.item():
-                print('⚠️ Model is sensitive to minor perturbations (not robust)')
-            "
-
-            echo "✅ Final model checks completed."
-
-
+        echo "🔍 Running model integrity checks..."
+        file model/cnn_model.pt
+        python -c "
+        import torch
+        from train_model import SimpleCNN
+        model = SimpleCNN()
+        model.load_state_dict(torch.load('model/cnn_model.pt'))
+        print(model)
+        "
+        MODEL_SIZE=$(stat --printf="%s" model/cnn_model.pt)
+        echo "Model size: $MODEL_SIZE bytes"
+        if [ $MODEL_SIZE -lt 50000 ]; then
+          echo "❌ Model size suspiciously small!"
+          exit 1
+        fi
+        python -c "
+        import torch
+        import torchvision.transforms as transforms
+        from train_model import SimpleCNN
+        from torchvision.datasets import CIFAR10
+        from torch.utils.data import DataLoader
+        model = SimpleCNN()
+        model.load_state_dict(torch.load('model/cnn_model.pt'))
+        model.eval()
+        transform = transforms.Compose([transforms.ToTensor()])
+        testset = CIFAR10(root='./data', train=False, download=True, transform=transform)
+        testloader = DataLoader(testset, batch_size=1, shuffle=True)
+        image, label = next(iter(testloader))
+        image.requires_grad = True
+        output = model(image)
+        pred = output.argmax(dim=1)
+        loss = torch.nn.CrossEntropyLoss()(output, label)
+        loss.backward()
+        adv_image = image + 0.05 * image.grad.sign()
+        new_pred = model(adv_image).argmax(dim=1)
+        print(f'Original Prediction: {pred.item()}, Adversarial Prediction: {new_pred.item()}')
+        if pred.item() != new_pred.item():
+            print('⚠️ Model is sensitive to minor perturbations (not robust)')
+        "
+        echo "✅ Final model checks completed."
 
     - name: Authenticate to Google Cloud
       uses: google-github-actions/auth@v2
       with:
-          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
 
     - name: Set up gcloud CLI
       uses: google-github-actions/setup-gcloud@v1
       with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
 
     - name: Set up Cosign
       run: |
-          curl -LO https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
-          chmod +x cosign-linux-amd64
-          sudo mv cosign-linux-amd64 /usr/local/bin/cosign
+        COSIGN_VERSION=v2.2.1
+        curl -LO https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64
+        chmod +x cosign-linux-amd64
+        sudo mv cosign-linux-amd64 /usr/local/bin/cosign
+        cosign version
 
-    # Quality Gate
     - name: Sign Model with Cosign
       env:
-        COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-        COSIGN_YES: true
+        COSIGN_EXPERIMENTAL: 0
       run: |
         echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
-        cosign sign-blob --key cosign.key model/cnn_model.pt
+        cosign sign-blob --key cosign.key --output-signature model/cnn_model.pt.sig model/cnn_model.pt
+        cosign public-key --key cosign.key > cosign.pub
+        rm cosign.key
 
-
-    # Store in GCP Storage
     - name: Upload to GCP Bucket
       uses: google-github-actions/upload-cloud-storage@v1
       with:
-        path: model/
+        path: model/cnn_model.pt
+        destination: ${{ secrets.GCP_BUCKET }}/models/
+
+    - name: Upload Signature to GCP Bucket
+      uses: google-github-actions/upload-cloud-storage@v1
+      with:
+        path: model/cnn_model.pt.sig
         destination: ${{ secrets.GCP_BUCKET }}/models/
 
     - name: Verify Cosign Signature
       run: |
-        echo "${{ secrets.COSIGN_PUBLIC_KEY }}" > cosign.pub
         cosign verify-blob --key cosign.pub --signature model/cnn_model.pt.sig model/cnn_model.pt
-
+        rm cosign.pub
