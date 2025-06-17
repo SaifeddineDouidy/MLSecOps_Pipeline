@@ -3,3 +3,6 @@ torchvision==0.17.2
 nbformat
 nbconvert
 jupyter
+numpy
+pandas
+scikit-learn
